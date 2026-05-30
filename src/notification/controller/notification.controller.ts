@@ -1,66 +1,59 @@
-import { Controller } from '@nestjs/common';
+import {
+  Controller,
+  Logger,
+  NotFoundException,
+  UseGuards,
+} from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { NotificationService } from '../service/notification.service';
+import { Metadata } from '@grpc/grpc-js';
+import { assertUserAccess } from '../../common/auth/assert-user-access.util';
+import { extractAuth } from '../../common/auth/grpc-metadata.util';
+import { GrpcAuthGuard } from '../../common/auth/grpc-auth.guard';
+import { RolesGuard } from '../../common/auth/roles.guard';
+import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { validateDto } from '../../common/validation/validate-dto.util';
 import type { NotificationChannel } from '../dto/send-notification.dto';
+import {
+  DeleteReadInAppNotificationsRequest,
+  GetUserNotificationPreferencesRequest,
+  ListInAppNotificationsRequest,
+  MarkAllInAppNotificationsReadRequest,
+  MarkInAppNotificationReadRequest,
+  SendNotificationRequest,
+  UpdateUserNotificationPreferenceRequest,
+} from '../dto/notification-request.dto';
+import { mapInAppNotificationsToGrpcItems } from '../mappers/notification-response.mapper';
+import { NotificationService } from '../service/notification.service';
 
-interface SendNotificationGrpcRequest {
-  event_id?: string;
-  event_type?: string;
-  channel?: string;
-  recipient?: string;
-  language?: string;
-  template_data?: Record<string, string>;
-}
+const USER_SCOPED_ROLES = [
+  'CUSTOMER',
+  'SELLER',
+  'SUPPLIER',
+  'ADMIN',
+  'INTERNAL',
+] as const;
 
-interface ListInAppNotificationsGrpcRequest {
-  user_id?: string;
-  category?: string;
-  page?: number;
-  limit?: number;
-}
-
-interface MarkInAppNotificationReadGrpcRequest {
-  user_id?: string;
-  notification_id?: string;
-}
-
-interface MarkAllInAppNotificationsReadGrpcRequest {
-  user_id?: string;
-}
-
-interface DeleteReadInAppNotificationsGrpcRequest {
-  user_id?: string;
-}
-
-interface GetUserNotificationPreferencesGrpcRequest {
-  user_id?: string;
-}
-
-interface UpdateUserNotificationPreferenceGrpcRequest {
-  user_id?: string;
-  event_type?: string;
-  email_enabled?: boolean;
-}
-
-@Controller('notification')
+@UseGuards(GrpcAuthGuard, RolesGuard)
+@Controller()
 export class NotificationController {
+  private readonly logger = new Logger(NotificationController.name);
+
   constructor(private readonly notificationService: NotificationService) {}
 
   @GrpcMethod('NotificationService', 'SendNotification')
-  async sendNotification(request: SendNotificationGrpcRequest): Promise<{
-    success: boolean;
-    message: string;
-    log_id: string;
-    error: string;
-  }> {
+  @Public()
+  async sendNotification(data: unknown, _metadata: Metadata) {
+    this.logger.log(`[SendNotification] received: ${JSON.stringify(data)}`);
     try {
+      const dto = await validateDto(SendNotificationRequest, data);
       const result = await this.notificationService.sendNotification({
-        eventId: request.event_id || '',
-        eventType: request.event_type || '',
-        channel: (request.channel || 'EMAIL').toUpperCase() as NotificationChannel,
-        recipient: request.recipient || '',
-        language: request.language || 'vi',
-        templateData: request.template_data || {},
+        eventId: dto.event_id,
+        eventType: dto.event_type,
+        channel: dto.channel.toUpperCase() as NotificationChannel,
+        recipient: dto.recipient ?? '',
+        language: dto.language ?? 'vi',
+        templateData: dto.template_data ?? {},
       });
 
       return {
@@ -70,108 +63,86 @@ export class NotificationController {
         error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return { success: false, message: '', log_id: '', error: err };
+      this.logger.error(
+        `[SendNotification] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 
   @GrpcMethod('NotificationService', 'ListInAppNotifications')
-  async listInAppNotifications(request: ListInAppNotificationsGrpcRequest): Promise<{
-    success: boolean;
-    message: string;
-    items: Array<{
-      id: string;
-      event_type: string;
-      category: string;
-      title: string;
-      body: string;
-      link_url: string;
-      is_read: boolean;
-      created_at: string;
-    }>;
-    total: number;
-    unread_count: number;
-    error: string;
-  }> {
+  @Roles(...USER_SCOPED_ROLES)
+  async listInAppNotifications(data: unknown, metadata: Metadata) {
     try {
+      const dto = await validateDto(ListInAppNotificationsRequest, data);
+      assertUserAccess(extractAuth(metadata), dto.user_id);
+
       const result = await this.notificationService.listInAppNotifications({
-        userId: request.user_id || '',
-        category: request.category,
-        page: request.page,
-        limit: request.limit,
+        userId: dto.user_id,
+        category: dto.category,
+        page: dto.page,
+        limit: dto.limit,
       });
 
       return {
         success: true,
         message: 'OK',
-        items: result.items.map((item) => ({
-          id: item.id,
-          event_type: item.eventType,
-          category: item.category,
-          title: item.title,
-          body: item.body,
-          link_url: item.linkUrl,
-          is_read: item.isRead,
-          created_at: item.createdAt.toISOString(),
-          order_id: item.orderId || '',
-          order_id_display: item.orderIdDisplay || '',
-          status_label: item.statusLabel || '',
-          total_amount_display: item.totalAmountDisplay || '',
-          product_name: item.productName || '',
-          product_thumbnail_url: item.productThumbnailUrl || '',
-          item_count: item.itemCount ?? 0,
-          priority: item.priority || 'normal',
-        })),
+        items: mapInAppNotificationsToGrpcItems(result.items),
         total: result.total,
         unread_count: result.unreadCount,
         error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        message: '',
-        items: [],
-        total: 0,
-        unread_count: 0,
-        error: err,
-      };
+      this.logger.error(
+        `[ListInAppNotifications] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 
   @GrpcMethod('NotificationService', 'MarkInAppNotificationRead')
-  async markInAppNotificationRead(
-    request: MarkInAppNotificationReadGrpcRequest,
-  ): Promise<{ success: boolean; message: string; error: string }> {
+  @Roles(...USER_SCOPED_ROLES)
+  async markInAppNotificationRead(data: unknown, metadata: Metadata) {
     try {
+      const dto = await validateDto(MarkInAppNotificationReadRequest, data);
+      assertUserAccess(extractAuth(metadata), dto.user_id);
+
       const ok = await this.notificationService.markInAppNotificationRead(
-        request.user_id || '',
-        request.notification_id || '',
+        dto.user_id,
+        dto.notification_id,
       );
+
+      if (!ok) {
+        throw new NotFoundException('Notification not found');
+      }
+
       return {
-        success: ok,
-        message: ok ? 'Marked as read' : 'Notification not found',
-        error: ok ? '' : 'NOT_FOUND',
+        success: true,
+        message: 'Marked as read',
+        error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return { success: false, message: '', error: err };
+      this.logger.error(
+        `[MarkInAppNotificationRead] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 
   @GrpcMethod('NotificationService', 'MarkAllInAppNotificationsRead')
-  async markAllInAppNotificationsRead(
-    request: MarkAllInAppNotificationsReadGrpcRequest,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    updated_count: number;
-    error: string;
-  }> {
+  @Roles(...USER_SCOPED_ROLES)
+  async markAllInAppNotificationsRead(data: unknown, metadata: Metadata) {
     try {
+      const dto = await validateDto(MarkAllInAppNotificationsReadRequest, data);
+      assertUserAccess(extractAuth(metadata), dto.user_id);
+
       const count = await this.notificationService.markAllInAppNotificationsRead(
-        request.user_id || '',
+        dto.user_id,
       );
+
       return {
         success: true,
         message: 'All notifications marked as read',
@@ -179,24 +150,26 @@ export class NotificationController {
         error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return { success: false, message: '', updated_count: 0, error: err };
+      this.logger.error(
+        `[MarkAllInAppNotificationsRead] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 
   @GrpcMethod('NotificationService', 'DeleteReadInAppNotifications')
-  async deleteReadInAppNotifications(
-    request: DeleteReadInAppNotificationsGrpcRequest,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    deleted_count: number;
-    error: string;
-  }> {
+  @Roles(...USER_SCOPED_ROLES)
+  async deleteReadInAppNotifications(data: unknown, metadata: Metadata) {
     try {
-      const deletedCount = await this.notificationService.deleteReadInAppNotifications(
-        request.user_id || '',
-      );
+      const dto = await validateDto(DeleteReadInAppNotificationsRequest, data);
+      assertUserAccess(extractAuth(metadata), dto.user_id);
+
+      const deletedCount =
+        await this.notificationService.deleteReadInAppNotifications(
+          dto.user_id,
+        );
+
       return {
         success: true,
         message: 'Read notifications deleted',
@@ -204,24 +177,28 @@ export class NotificationController {
         error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return { success: false, message: '', deleted_count: 0, error: err };
+      this.logger.error(
+        `[DeleteReadInAppNotifications] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 
   @GrpcMethod('NotificationService', 'GetUserNotificationPreferences')
-  async getUserNotificationPreferences(
-    request: GetUserNotificationPreferencesGrpcRequest,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    items: Array<{ event_type: string; email_enabled: boolean }>;
-    error: string;
-  }> {
+  @Roles(...USER_SCOPED_ROLES)
+  async getUserNotificationPreferences(data: unknown, metadata: Metadata) {
     try {
-      const items = await this.notificationService.listUserPreferences(
-        request.user_id || '',
+      const dto = await validateDto(
+        GetUserNotificationPreferencesRequest,
+        data,
       );
+      assertUserAccess(extractAuth(metadata), dto.user_id);
+
+      const items = await this.notificationService.listUserPreferences(
+        dto.user_id,
+      );
+
       return {
         success: true,
         message: 'OK',
@@ -232,27 +209,30 @@ export class NotificationController {
         error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return { success: false, message: '', items: [], error: err };
+      this.logger.error(
+        `[GetUserNotificationPreferences] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 
   @GrpcMethod('NotificationService', 'UpdateUserNotificationPreference')
-  async updateUserNotificationPreference(
-    request: UpdateUserNotificationPreferenceGrpcRequest,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    event_type: string;
-    email_enabled: boolean;
-    error: string;
-  }> {
+  @Roles(...USER_SCOPED_ROLES)
+  async updateUserNotificationPreference(data: unknown, metadata: Metadata) {
     try {
-      const row = await this.notificationService.updateUserPreference(
-        request.user_id || '',
-        request.event_type || '',
-        Boolean(request.email_enabled),
+      const dto = await validateDto(
+        UpdateUserNotificationPreferenceRequest,
+        data,
       );
+      assertUserAccess(extractAuth(metadata), dto.user_id);
+
+      const row = await this.notificationService.updateUserPreference(
+        dto.user_id,
+        dto.event_type,
+        dto.email_enabled,
+      );
+
       return {
         success: true,
         message: 'Preference updated',
@@ -261,14 +241,11 @@ export class NotificationController {
         error: '',
       };
     } catch (error) {
-      const err = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        message: '',
-        event_type: '',
-        email_enabled: false,
-        error: err,
-      };
+      this.logger.error(
+        `[UpdateUserNotificationPreference] failed: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
+      throw error;
     }
   }
 }
