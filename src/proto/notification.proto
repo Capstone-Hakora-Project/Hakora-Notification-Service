@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package notification;
+
+service NotificationService {
+  rpc SendNotification (SendNotificationRequest) returns (SendNotificationResponse);
+  rpc ListInAppNotifications (ListInAppNotificationsRequest) returns (ListInAppNotificationsResponse);
+  rpc MarkInAppNotificationRead (MarkInAppNotificationReadRequest) returns (MarkInAppNotificationReadResponse);
+  rpc MarkAllInAppNotificationsRead (MarkAllInAppNotificationsReadRequest) returns (MarkAllInAppNotificationsReadResponse);
+  rpc DeleteReadInAppNotifications (DeleteReadInAppNotificationsRequest) returns (DeleteReadInAppNotificationsResponse);
+  rpc GetUserNotificationPreferences (GetUserNotificationPreferencesRequest) returns (GetUserNotificationPreferencesResponse);
+  rpc UpdateUserNotificationPreference (UpdateUserNotificationPreferenceRequest) returns (UpdateUserNotificationPreferenceResponse);
+}
+
+message SendNotificationRequest {
+  string event_id = 1;
+  string event_type = 2;
+  string channel = 3;
+  string recipient = 4;
+  string language = 5;
+  map<string, string> template_data = 6;
+}
+
+message SendNotificationResponse {
+  bool success = 1;
+  string message = 2;
+  string log_id = 3;
+  string error = 4;
+}
+
+message ListInAppNotificationsRequest {
+  string user_id = 1;
+  string category = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message InAppNotificationItem {
+  string id = 1;
+  string event_type = 2;
+  string category = 3;
+  string title = 4;
+  string body = 5;
+  string link_url = 6;
+  bool is_read = 7;
+  string created_at = 8;
+  string order_id = 9;
+  string order_id_display = 10;
+  string status_label = 11;
+  string total_amount_display = 12;
+  string product_name = 13;
+  string product_thumbnail_url = 14;
+  int32 item_count = 15;
+  string priority = 16;
+}
+
+message ListInAppNotificationsResponse {
+  bool success = 1;
+  string message = 2;
+  repeated InAppNotificationItem items = 3;
+  int32 total = 4;
+  int32 unread_count = 5;
+  string error = 6;
+}
+
+message MarkInAppNotificationReadRequest {
+  string user_id = 1;
+  string notification_id = 2;
+}
+
+message MarkInAppNotificationReadResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message MarkAllInAppNotificationsReadRequest {
+  string user_id = 1;
+}
+
+message MarkAllInAppNotificationsReadResponse {
+  bool success = 1;
+  string message = 2;
+  int32 updated_count = 3;
+  string error = 4;
+}
+
+message DeleteReadInAppNotificationsRequest {
+  string user_id = 1;
+}
+
+message DeleteReadInAppNotificationsResponse {
+  bool success = 1;
+  string message = 2;
+  int32 deleted_count = 3;
+  string error = 4;
+}
+
+message GetUserNotificationPreferencesRequest {
+  string user_id = 1;
+}
+
+message NotificationPreferenceItem {
+  string event_type = 1;
+  bool email_enabled = 2;
+}
+
+message GetUserNotificationPreferencesResponse {
+  bool success = 1;
+  string message = 2;
+  repeated NotificationPreferenceItem items = 3;
+  string error = 4;
+}
+
+message UpdateUserNotificationPreferenceRequest {
+  string user_id = 1;
+  string event_type = 2;
+  bool email_enabled = 3;
+}
+
+message UpdateUserNotificationPreferenceResponse {
+  bool success = 1;
+  string message = 2;
+  string event_type = 3;
+  bool email_enabled = 4;
+  string error = 5;
+}
