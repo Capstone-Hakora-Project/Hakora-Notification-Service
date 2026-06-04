@@ -248,7 +248,7 @@ export class NotificationService {
       ),
       note:
         String(templateData.note || '').trim() ||
-        'Giao dịch đã được ghi nhận trên hệ thống Hakora.',
+        'Transaction recorded on Hakora.',
     };
     const rendered = await this.templateService.renderEmailTemplate(
       eventType,
@@ -382,49 +382,90 @@ export class NotificationService {
     templateData: Record<string, string>,
   ): { title: string; body: string; linkUrl: string; category: string } {
     const actorRole = String(templateData.actorRole || '').trim().toLowerCase();
+    const customTitle = String(
+      templateData.inAppTitle || templateData.notificationTitle || '',
+    ).trim();
+    const customBody = String(
+      templateData.inAppBody || templateData.notificationBody || '',
+    ).trim();
+    const platformEvents = new Set([
+      'system.announcement',
+      'compliance.report.created',
+      'chat.message.received',
+    ]);
+    if (customTitle || platformEvents.has(eventType)) {
+      const platformTitleMap: Record<string, string> = {
+        'system.announcement': 'Platform announcement',
+        'compliance.report.created': 'New compliance report',
+        'chat.message.received': 'New message',
+      };
+      const title = customTitle || platformTitleMap[eventType] || 'Notification';
+      const body =
+        customBody ||
+        String(templateData.note || '').trim() ||
+        title;
+      const reportId = String(templateData.reportId || '').trim();
+      const senderId = String(templateData.senderId || '').trim();
+      let defaultLink = String(templateData.ctaUrl || templateData.cta_url || '').trim();
+      if (!defaultLink && eventType === 'compliance.report.created' && reportId) {
+        defaultLink = `/admin/complaints/${reportId}`;
+      }
+      if (!defaultLink && eventType === 'chat.message.received' && senderId) {
+        defaultLink = `/admin/messages?userId=${encodeURIComponent(senderId)}`;
+      }
+      if (!defaultLink && actorRole === 'admin') {
+        defaultLink = '/admin/notifications';
+      }
+      return {
+        title,
+        body,
+        linkUrl: this.resolveInAppLinkUrl('', defaultLink, actorRole),
+        category: 'system-updates',
+      };
+    }
     const titleMap: Record<string, string> = {
-      'order.created': 'Đặt hàng thành công',
-      'order.confirmed': 'Shop đã xác nhận đơn hàng',
-      'order.cancelled': 'Đơn hàng đã bị hủy',
-      'order.shipped': 'Đơn hàng đang được giao',
-      'order.delivered': 'Đơn hàng đã giao thành công',
-      'order.completed': 'Đơn hàng đã hoàn tất',
-      'delivery.shipped': 'Đơn đang trên đường giao',
-      'delivery.delivered': 'Giao hàng thành công',
-      'payment.succeeded': 'Thanh toán thành công',
-      'payment.failed': 'Thanh toán thất bại',
-      'payment.refunded': 'Đã hoàn tiền',
-      'payment.rejected': 'Thanh toán bị từ chối',
+      'order.created': 'Order placed successfully',
+      'order.confirmed': 'Store confirmed your order',
+      'order.cancelled': 'Order cancelled',
+      'order.shipped': 'Order is on the way',
+      'order.delivered': 'Order delivered',
+      'order.completed': 'Order completed',
+      'delivery.shipped': 'Shipment in transit',
+      'delivery.delivered': 'Delivery successful',
+      'payment.succeeded': 'Payment successful',
+      'payment.failed': 'Payment failed',
+      'payment.refunded': 'Payment refunded',
+      'payment.rejected': 'Payment declined',
     };
     const sellerTitleMap: Record<string, string> = {
-      'order.created': 'Đơn mới đang chờ NCC xác nhận',
-      'order.confirmed': 'NCC đã xác nhận đơn',
-      'order.rejected': 'NCC đã từ chối đơn',
-      'order.cancelled': 'NCC đã hủy đơn',
-      'order.shipped': 'NCC đã bàn giao vận chuyển',
-      'order.delivered': 'Đơn đã giao thành công',
-      'order.completed': 'Đơn hàng hoàn tất',
-      'delivery.shipped': 'Đơn hàng đang vận chuyển',
-      'delivery.delivered': 'Đơn hàng đã giao cho khách',
+      'order.created': 'New order awaiting supplier',
+      'order.confirmed': 'Supplier confirmed order',
+      'order.rejected': 'Supplier rejected order',
+      'order.cancelled': 'Supplier cancelled order',
+      'order.shipped': 'Supplier handed off to carrier',
+      'order.delivered': 'Order delivered',
+      'order.completed': 'Order completed',
+      'delivery.shipped': 'Order in transit',
+      'delivery.delivered': 'Order delivered to customer',
     };
     const supplierTitleMap: Record<string, string> = {
-      'order.created': 'Có đơn hàng mới cần xử lý',
-      'order.confirmed': 'Đơn hàng đã xác nhận',
-      'order.rejected': 'Bạn đã từ chối đơn hàng',
-      'order.cancelled': 'Đơn hàng đã bị hủy',
-      'order.shipped': 'Đơn hàng đã xuất kho',
-      'order.delivered': 'Đơn hàng giao thành công',
-      'order.completed': 'Đơn hàng hoàn tất',
-      'delivery.shipped': 'Đơn hàng đang được giao',
-      'delivery.delivered': 'Đơn hàng đã giao thành công',
-      'order.confirmation_deadline': 'Đơn sắp quá hạn xác nhận',
-      'order.confirm_deadline_soon': 'Đơn sắp quá hạn xác nhận',
-      'order.deadline_soon': 'Đơn sắp quá hạn xác nhận',
-      'delivery.failed': 'Giao hàng thất bại',
-      'order.complaint': 'Đơn bị khiếu nại',
-      'order.complained': 'Đơn bị khiếu nại',
-      'order.disputed': 'Đơn bị khiếu nại',
-      'payment.rejected': 'Thanh toán bị từ chối',
+      'order.created': 'New order needs action',
+      'order.confirmed': 'Order confirmed',
+      'order.rejected': 'You rejected the order',
+      'order.cancelled': 'Order cancelled',
+      'order.shipped': 'Order shipped',
+      'order.delivered': 'Order delivered',
+      'order.completed': 'Order completed',
+      'delivery.shipped': 'Order in transit',
+      'delivery.delivered': 'Order delivered',
+      'order.confirmation_deadline': 'Confirmation deadline soon',
+      'order.confirm_deadline_soon': 'Confirmation deadline soon',
+      'order.deadline_soon': 'Confirmation deadline soon',
+      'delivery.failed': 'Delivery failed',
+      'order.complaint': 'Order disputed',
+      'order.complained': 'Order disputed',
+      'order.disputed': 'Order disputed',
+      'payment.rejected': 'Payment declined',
     };
 
     const roleAwareTitleMap =
@@ -433,15 +474,15 @@ export class NotificationService {
         : actorRole === 'supplier'
           ? supplierTitleMap
           : titleMap;
-    let title = roleAwareTitleMap[eventType] || 'Cập nhật đơn hàng';
+    let title = roleAwareTitleMap[eventType] || 'Order update';
     const isCustomer =
       actorRole !== 'seller' && actorRole !== 'supplier';
     if (isCustomer && eventType === 'order.rejected') {
       const shopName = this.resolveShopDisplayName(templateData);
-      title = `${shopName} đã từ chối đơn hàng`;
+      title = `${shopName} rejected your order`;
     } else if (isCustomer && eventType === 'order.confirmed') {
       const shopName = this.resolveShopDisplayName(templateData);
-      title = `${shopName} đã xác nhận đơn hàng`;
+      title = `${shopName} confirmed your order`;
     } else if (actorRole === 'seller') {
       title = this.buildSellerTitle(eventType, templateData, title);
     }
@@ -486,13 +527,20 @@ export class NotificationService {
     actorRole: string,
   ): string {
     const url = String(ctaUrl || '').trim();
+    if (url.startsWith('/admin/')) {
+      return url;
+    }
     if (url.startsWith('/seller/') || url.startsWith('/supplier/') || url.startsWith('/customer/')) {
       return url;
     }
     if (orderId) {
+      if (actorRole === 'admin') return `/admin/orders/${orderId}`;
       if (actorRole === 'seller') return `/seller/orders/${orderId}`;
       if (actorRole === 'supplier') return `/supplier/orders/${orderId}`;
       return `/customer/account/my-purchases/order/${orderId}`;
+    }
+    if (actorRole === 'admin') {
+      return '/admin/notifications';
     }
     const match = url.match(/\/my-purchases\/order\/([^/?#]+)/i);
     if (match?.[1]) {
@@ -505,14 +553,14 @@ export class NotificationService {
     const name = String(
       templateData.sellerName || templateData.seller_name || '',
     ).trim();
-    return name || 'Cửa hàng';
+    return name || 'Store';
   }
 
   private resolveSupplierDisplayName(templateData: Record<string, string>): string {
     const name = String(
       templateData.supplierName || templateData.supplier_name || '',
     ).trim();
-    return name || 'NCC';
+    return name || 'Supplier';
   }
 
   private buildSellerTitle(
@@ -522,12 +570,12 @@ export class NotificationService {
   ): string {
     const supplierName = this.resolveSupplierDisplayName(templateData);
     const map: Record<string, string> = {
-      'order.created': `Đơn mới chờ ${supplierName} xác nhận`,
-      'order.confirmed': `${supplierName} đã xác nhận đơn`,
-      'order.rejected': `${supplierName} đã từ chối đơn`,
-      'order.cancelled': `${supplierName} đã hủy đơn`,
-      'order.shipped': `${supplierName} đã bàn giao vận chuyển`,
-      'order.delivered': `${supplierName} đã giao đơn thành công`,
+      'order.created': `New order awaiting ${supplierName}`,
+      'order.confirmed': `${supplierName} confirmed the order`,
+      'order.rejected': `${supplierName} rejected the order`,
+      'order.cancelled': `${supplierName} cancelled the order`,
+      'order.shipped': `${supplierName} handed off to carrier`,
+      'order.delivered': `${supplierName} delivered the order`,
     };
     return map[eventType] || fallback;
   }
@@ -545,7 +593,7 @@ export class NotificationService {
     if (productLine) parts.push(productLine);
     const rejectReason = this.extractRejectReason(templateData);
     if (rejectReason) {
-      parts.push(`Lý do: ${rejectReason}`);
+      parts.push(`Reason: ${rejectReason}`);
     }
     return parts.join(' · ');
   }
@@ -556,9 +604,10 @@ export class NotificationService {
       return reason;
     }
     const note = String(templateData.note || '').trim();
-    const prefixed = note.match(/từ chối đơn:\s*(.+)$/i);
+    const prefixed =
+      note.match(/(?:từ chối đơn|rejected order|reason):\s*(.+)$/i);
     if (prefixed?.[1]) return prefixed[1].trim();
-    if (note && !/ncc/i.test(note)) return note;
+    if (note && !/ncc|supplier/i.test(note)) return note;
     return '';
   }
 
@@ -576,7 +625,7 @@ export class NotificationService {
     if (productLine) parts.push(productLine);
     const rejectReason = this.extractRejectReason(templateData);
     if (rejectReason) {
-      parts.push(`Lý do: ${rejectReason}`);
+      parts.push(`Reason: ${rejectReason}`);
     }
     return parts.join(' · ');
   }
@@ -593,12 +642,12 @@ export class NotificationService {
   ): string {
     const parts: string[] = [];
     if (ctx.orderIdDisplay) {
-      parts.push(`Đơn ${ctx.orderIdDisplay}`);
+      parts.push(`Order ${ctx.orderIdDisplay}`);
     }
     const method = this.toPaymentMethodLabel(
       templateData.paymentMethod || templateData.payment_method || '',
     );
-    if (method && method !== 'Thanh toán trực tuyến') {
+    if (method && method !== 'Online payment') {
       parts.push(method);
     }
     if (
@@ -613,13 +662,13 @@ export class NotificationService {
         '',
     );
     if (tx && tx !== 'N/A') {
-      parts.push(`GD ${tx}`);
+      parts.push(`Txn ${tx}`);
     }
     if (eventType === 'payment.failed') {
       const failNote = String(templateData.note || templateData.reason || '').trim();
       if (failNote) parts.push(failNote);
     }
-    return parts.join(' · ') || ctx.statusLabel || 'Cập nhật thanh toán';
+    return parts.join(' · ') || ctx.statusLabel || 'Payment update';
   }
 
   private toPaymentMethodLabel(raw: string): string {
@@ -628,13 +677,13 @@ export class NotificationService {
       .toUpperCase()
       .replace(/-/g, '_');
     const map: Record<string, string> = {
-      CREDIT_CARD: 'Thẻ tín dụng / ghi nợ',
-      DEBIT_CARD: 'Thẻ ghi nợ',
-      EWALLET: 'Ví điện tử',
-      CARD: 'Thẻ ngân hàng',
-      COD: 'Thanh toán khi nhận (COD)',
+      CREDIT_CARD: 'Credit / debit card',
+      DEBIT_CARD: 'Debit card',
+      EWALLET: 'E-wallet',
+      CARD: 'Bank card',
+      COD: 'Cash on delivery (COD)',
     };
-    return map[key] || (key ? raw : 'Thanh toán trực tuyến (Stripe)');
+    return map[key] || (key ? raw : 'Online payment (Stripe)');
   }
 
   private toTransactionIdDisplay(raw: string): string {
@@ -676,10 +725,10 @@ export class NotificationService {
     const parts: string[] = [];
     if (ctx.productName) {
       const extra =
-        ctx.itemCount > 1 ? ` (+${ctx.itemCount - 1} SP)` : '';
+        ctx.itemCount > 1 ? ` (+${ctx.itemCount - 1} more)` : '';
       parts.push(`${ctx.productName}${extra}`);
     } else if (ctx.itemCount > 0) {
-      parts.push(`${ctx.itemCount} sản phẩm`);
+      parts.push(`${ctx.itemCount} item${ctx.itemCount > 1 ? 's' : ''}`);
     }
     if (ctx.totalAmountDisplay && !ctx.totalAmountDisplay.startsWith('0 ')) {
       parts.push(ctx.totalAmountDisplay);
@@ -698,6 +747,24 @@ export class NotificationService {
     actorRole: string,
     templateData: Record<string, string> = {},
   ): string {
+    if (actorRole === 'admin') {
+      const explicitAdmin = String(
+        templateData.notificationPriority || templateData.notification_priority || '',
+      )
+        .trim()
+        .toLowerCase();
+      if (['urgent', 'action_required', 'normal'].includes(explicitAdmin)) {
+        return explicitAdmin;
+      }
+      if (
+        eventType === 'compliance.report.created' ||
+        eventType === 'chat.message.received'
+      ) {
+        return 'action_required';
+      }
+      return 'normal';
+    }
+
     if (actorRole !== 'supplier') return 'normal';
 
     const explicit = String(
@@ -739,25 +806,25 @@ export class NotificationService {
   private toStatusLabel(statusRaw: string): string {
     const status = String(statusRaw || '').trim().toUpperCase();
     const map: Record<string, string> = {
-      CREATED: 'Đơn hàng mới',
-      PENDING: 'Chờ xác nhận',
-      CONFIRMED: 'Đã xác nhận',
-      REJECTED: 'Đã từ chối',
-      SHIPPED: 'Đang giao hàng',
-      DELIVERED: 'Đã giao hàng',
-      COMPLETED: 'Hoàn tất',
-      CANCELLED: 'Đã hủy',
-      FAILED: 'Thất bại',
-      SUCCEEDED: 'Thanh toán thành công',
-      REFUNDED: 'Đã hoàn tiền',
-      UPDATED: 'Đã cập nhật',
-      PICKED_UP: 'Đã lấy hàng',
-      DELIVERING: 'Đang giao đến bạn',
-      IN_TRANSIT: 'Đang vận chuyển',
-      OUT_FOR_DELIVERY: 'Đang giao đến bạn',
-      PICKUP_READY: 'Sẵn sàng lấy hàng',
+      CREATED: 'New order',
+      PENDING: 'Pending confirmation',
+      CONFIRMED: 'Confirmed',
+      REJECTED: 'Rejected',
+      SHIPPED: 'Shipped',
+      DELIVERED: 'Delivered',
+      COMPLETED: 'Completed',
+      CANCELLED: 'Cancelled',
+      FAILED: 'Failed',
+      SUCCEEDED: 'Payment successful',
+      REFUNDED: 'Refunded',
+      UPDATED: 'Updated',
+      PICKED_UP: 'Picked up',
+      DELIVERING: 'Out for delivery',
+      IN_TRANSIT: 'In transit',
+      OUT_FOR_DELIVERY: 'Out for delivery',
+      PICKUP_READY: 'Ready for pickup',
     };
-    return map[status] || (statusRaw ? String(statusRaw) : 'Đã cập nhật');
+    return map[status] || (statusRaw ? String(statusRaw) : 'Updated');
   }
 
   private toDisplayId(idRaw: string): string {
@@ -772,7 +839,7 @@ export class NotificationService {
 
   private toEstimatedDeliveryDisplay(raw: string): string {
     const value = String(raw || '').trim();
-    if (!value) return 'Đang cập nhật';
+    if (!value) return 'Updating soon';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return new Intl.DateTimeFormat('vi-VN', {
@@ -784,9 +851,9 @@ export class NotificationService {
 
   private toVnd(amountRaw: string): string {
     const amount = Number(String(amountRaw || '').replace(/[^0-9.-]/g, ''));
-    if (!Number.isFinite(amount)) return String(amountRaw || '0 VNĐ');
-    const formatted = new Intl.NumberFormat('vi-VN').format(Math.round(amount));
-    return `${formatted} VNĐ`;
+    if (!Number.isFinite(amount)) return String(amountRaw || '0 VND');
+    const formatted = new Intl.NumberFormat('en-US').format(Math.round(amount));
+    return `${formatted} VND`;
   }
 
   private toItemsTableRows(itemsJsonRaw: string, currencyRaw: string): string {
@@ -844,7 +911,7 @@ export class NotificationService {
     if (!Number.isFinite(amount)) return '0';
     const formatted = new Intl.NumberFormat('vi-VN').format(Math.round(amount));
     const currency = String(currencyRaw || 'VND').toUpperCase();
-    return currency === 'VND' ? `${formatted} VNĐ` : `${formatted} ${currency}`;
+    return currency === 'VND' ? `${formatted} VND` : `${formatted} ${currency}`;
   }
 
   private validateSendNotificationDto(dto: SendNotificationDto): void {

@@ -94,7 +94,7 @@ export class OrderEventConsumer {
           (data.orderId || data.order_id || '')
             ? `/seller/orders/${data.orderId || data.order_id || ''}`
             : '/seller/orders',
-        note: `Bạn có cập nhật đơn hàng ${String(data.orderId || '').slice(0, 8)}...`,
+        note: `Order update ${String(data.orderId || '').slice(0, 8)}…`,
       });
 
       await this.dispatchInAppToActor(baseEventId, eventType, 'supplier', data.supplierId, {
@@ -104,7 +104,7 @@ export class OrderEventConsumer {
           (data.orderId || data.order_id || '')
             ? `/supplier/orders/${data.orderId || data.order_id || ''}`
             : '/supplier/orders',
-        note: `Đơn hàng mới/cập nhật cần xử lý`,
+        note: `New or updated order needs your attention`,
       });
     } catch (error) {
       this.logger.warn(
