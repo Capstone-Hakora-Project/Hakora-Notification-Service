@@ -77,8 +77,8 @@ export class PaymentEventConsumer {
         data.note ||
         data.reason ||
         data.error ||
-        (eventType === 'payment.failed' ? 'Thanh toán không thành công' : ''),
-      customerName: data.customerName || data.customer_name || 'Quý khách',
+        (eventType === 'payment.failed' ? 'Payment was not successful' : ''),
+      customerName: data.customerName || data.customer_name || 'Customer',
       productName: data.productName || data.product_name || '',
       product_name: data.productName || data.product_name || '',
       productThumbnailUrl:
